@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Network Playground</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+  .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+  header { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { color: #79c0ff; font-size: 20px; }
+  header h1 small { font-size: 10px; background: #1f6feb; color: #fff; padding: 2px 6px; border-radius: 3px; margin-left: 8px; }
+  .layout { display: grid; grid-template-columns: 280px 1fr 300px; gap: 16px; min-height: 600px; }
+  .sidebar { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .sidebar h3 { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .canvas-area { background: #0d1117; border: 1px solid #30363d; border-radius: 10px; position: relative; overflow: hidden; min-height: 600px; }
+  #networkCanvas { width: 100%; height: 100%; min-height: 600px; }
+  .right-panel { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .layer-btn { display: block; width: 100%; padding: 8px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; margin-bottom: 6px; font-size: 12px; text-align: left; }
+  .layer-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .param-group { margin-bottom: 12px; }
+  .param-group label { display: block; color: #8b949e; font-size: 11px; margin-bottom: 4px; }
+  .param-group input { width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-size: 12px; }
+  .param-group select { width: 100%; padding: 6px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-size: 12px; }
+  .stats-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 12px; }
+  .stats-row .stat-label { color: #8b949e; }
+  .stats-row .stat-value { color: #f0f6fc; font-weight: 600; }
+  .btn { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .btn-primary { background: #238636; color: #fff; }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-danger { background: #da3633; color: #fff; }
+  .btn-danger:hover { background: #f85149; }
+  .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .btn-secondary:hover { background: #30363d; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .node { position: absolute; cursor: move; user-select: none; }
+  .node circle { fill: #1f6feb; stroke: #58a6ff; stroke-width: 2; }
+  .node text { fill: #c9d1d9; font-size: 10px; text-anchor: middle; }
+  .edge { stroke: #30363d; stroke-width: 2; fill: none; }
+  #lossChart { width: 100%; height: 120px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Neural Network Playground <small>Interactive Builder</small></h1>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="runNetwork()">Run</button>
+      <button class="btn btn-secondary" onclick="clearNetwork()">Clear</button>
+      <button class="btn btn-secondary" onclick="exportJSON()">Export</button>
+      <button class="btn btn-secondary" onclick="importJSON()">Import</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="sidebar" id="layerPalette">
+      <h3>Add Layers</h3>
+      <button class="layer-btn" onclick="addLayer('input')">Input</button>
+      <button class="layer-btn" onclick="addLayer('dense')">Dense (Linear)</button>
+      <button class="layer-btn" onclick="addLayer('conv2d')">Conv2D</button>
+      <button class="layer-btn" onclick="addLayer('pool')">Pooling</button>
+      <button class="layer-btn" onclick="addLayer('dropout')">Dropout</button>
+      <button class="layer-btn" onclick="addLayer('activation')">Activation</button>
+      <button class="layer-btn" onclick="addLayer('flatten')">Flatten</button>
+      <button class="layer-btn" onclick="addLayer('output')">Output</button>
+
+      <h3 style="margin-top:20px;">Presets</h3>
+      <button class="layer-btn" onclick="loadPreset('mlp')">MLP Classifier</button>
+      <button class="layer-btn" onclick="loadPreset('cnn')">CNN Classifier</button>
+      <button class="layer-btn" onclick="loadPreset('autoencoder')">Autoencoder</button>
+    </div>
+
+    <div class="canvas-area" id="canvasContainer">
+      <canvas id="networkCanvas"></canvas>
+      <div id="nodeLayer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></div>
+    </div>
+
+    <div class="right-panel">
+      <h3>Properties</h3>
+      <div id="propertiesPanel">
+        <p style="color:#8b949e;font-size:12px;">Click a layer to edit</p>
+      </div>
+      <h3 style="margin-top:20px;">Statistics</h3>
+      <div id="statsPanel">
+        <div class="stats-row"><span class="stat-label">Layers</span><span class="stat-value" id="layerCount">0</span></div>
+        <div class="stats-row"><span class="stat-label">Parameters</span><span class="stat-value" id="paramCount">0</span></div>
+        <div class="stats-row"><span class="stat-label">Connections</span><span class="stat-value" id="edgeCount">0</span></div>
+      </div>
+      <canvas id="lossChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('networkCanvas');
+const ctx = canvas.getContext('2d');
+let nodes = [];
+let edges = [];
+let selectedNode = null;
+let nextId = 1;
+let dragNode = null;
+let dragOffset = { x: 0, y: 0 };
+
+function resizeCanvas() {
+  const rect = document.getElementById('canvasContainer').getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function addLayer(type) {
+  const rect = canvas.getBoundingClientRect();
+  const node = {
+    id: nextId++,
+    type: type,
+    label: type.charAt(0).toUpperCase() + type.slice(1),
+    x: 40 + nodes.length * 120,
+    y: rect.height / 2 + (Math.random() - 0.5) * 100,
+    params: getDefaultParams(type),
+  };
+  nodes.push(node);
+  if (nodes.length > 1) {
+    edges.push({ from: nodes[nodes.length - 2].id, to: node.id });
+  }
+  updateStats();
+  draw();
+}
+
+function getDefaultParams(type) {
+  switch (type) {
+    case 'input': return { shape: [28, 28, 1] };
+    case 'dense': return { units: 64, activation: 'relu' };
+    case 'conv2d': return { filters: 32, kernel: 3, stride: 1, padding: 'same', activation: 'relu' };
+    case 'pool': return { type: 'max', size: 2 };
+    case 'dropout': return { rate: 0.25 };
+    case 'activation': return { fn: 'relu' };
+    case 'flatten': return {};
+    case 'output': return { units: 10, activation: 'softmax' };
+    default: return {};
+  }
+}
+
+function loadPreset(name) {
+  clearNetwork();
+  const presets = {
+    mlp: ['input', 'dense', 'activation', 'dense', 'activation', 'output'],
+    cnn: ['input', 'conv2d', 'activation', 'pool', 'flatten', 'dense', 'activation', 'output'],
+    autoencoder: ['input', 'dense', 'activation', 'dense', 'dense', 'activation', 'dense', 'output'],
+  };
+  const layers = presets[name] || presets.mlp;
+  layers.forEach(t => addLayer(t));
+  draw();
+}
+
+function clearNetwork() {
+  nodes = [];
+  edges = [];
+  selectedNode = null;
+  nextId = 1;
+  updateStats();
+  draw();
+  document.getElementById('propertiesPanel').innerHTML = '<p style="color:#8b949e;font-size:12px;">Click a layer to edit</p>';
+}
+
+function updateStats() {
+  document.getElementById('layerCount').textContent = nodes.length;
+  document.getElementById('edgeCount').textContent = edges.length;
+  let params = 0;
+  nodes.forEach(n => {
+    if (n.type === 'dense' && n.params.units) params += n.params.units * (n.params.units || 64);
+    if (n.type === 'conv2d' && n.params.filters) params += n.params.filters * (n.params.filters || 32) * (n.params.kernel || 3) ** 2;
+  });
+  document.getElementById('paramCount').textContent = params.toLocaleString();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  edges.forEach(e => {
+    const from = nodeMap[e.from];
+    const to = nodeMap[e.to];
+    if (from && to) {
+      ctx.beginPath();
+      ctx.moveTo(from.x + 30, from.y);
+      ctx.lineTo(to.x - 30, to.y);
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const midX = (from.x + to.x) / 2;
+      const midY = (from.y + to.y) / 2;
+      ctx.fillStyle = '#30363d';
+      ctx.beginPath();
+      ctx.arc(midX, midY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  nodes.forEach(n => {
+    const isSelected = selectedNode && selectedNode.id === n.id;
+    ctx.beginPath();
+    ctx.roundRect(n.x - 30, n.y - 20, 60, 40, 6);
+    ctx.fillStyle = isSelected ? '#1f6feb' : '#21262d';
+    ctx.fill();
+    ctx.strokeStyle = isSelected ? '#58a6ff' : '#30363d';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.stroke();
+    ctx.fillStyle = '#c9d1d9';
+    ctx.font = '10px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.label, n.x, n.y + 4);
+  });
+}
+
+function getNodeAt(x, y) {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    if (Math.abs(x - n.x) < 30 && Math.abs(y - n.y) < 20) return n;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousedown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const node = getNodeAt(x, y);
+  if (node) {
+    selectedNode = node;
+    dragNode = node;
+    dragOffset = { x: x - node.x, y: y - node.y };
+    showProperties(node);
+    draw();
+  } else {
+    selectedNode = null;
+    document.getElementById('propertiesPanel').innerHTML = '<p style="color:#8b949e;font-size:12px;">Click a layer to edit</p>';
+    draw();
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (dragNode) {
+    const rect = canvas.getBoundingClientRect();
+    dragNode.x = e.clientX - rect.left - dragOffset.x;
+    dragNode.y = e.clientY - rect.top - dragOffset.y;
+    draw();
+  }
+});
+
+canvas.addEventListener('mouseup', () => { dragNode = null; });
+canvas.addEventListener('mouseleave', () => { dragNode = null; });
+
+function showProperties(node) {
+  const panel = document.getElementById('propertiesPanel');
+  let html = `<div class="param-group"><label>Type</label><input value="${node.type}" disabled></div>`;
+  html += `<div class="param-group"><label>Label</label><input value="${node.label}" onchange="updateNodeLabel(${node.id}, this.value)"></div>`;
+  for (const [key, val] of Object.entries(node.params)) {
+    html += `<div class="param-group"><label>${key}</label><input value="${val}" onchange="updateNodeParam(${node.id}, '${key}', this.value)"></div>`;
+  }
+  html += `<button class="btn btn-danger" onclick="removeNode(${node.id})">Remove Layer</button>`;
+  panel.innerHTML = html;
+}
+
+function updateNodeLabel(id, label) {
+  const node = nodes.find(n => n.id === id);
+  if (node) { node.label = label; draw(); }
+}
+
+function updateNodeParam(id, key, value) {
+  const node = nodes.find(n => n.id === id);
+  if (node) {
+    const num = parseFloat(value);
+    node.params[key] = isNaN(num) ? value : num;
+    updateStats();
+  }
+}
+
+function removeNode(id) {
+  nodes = nodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e.from !== id && e.to !== id);
+  selectedNode = null;
+  updateStats();
+  draw();
+  document.getElementById('propertiesPanel').innerHTML = '<p style="color:#8b949e;font-size:12px;">Click a layer to edit</p>';
+}
+
+function runNetwork() {
+  document.getElementById('lossChart').style.display = 'block';
+  const chart = document.getElementById('lossChart');
+  const c = chart.getContext('2d');
+  chart.width = chart.clientWidth || 300;
+  chart.height = chart.clientHeight || 120;
+  c.clearRect(0, 0, chart.width, chart.height);
+
+  let epoch = 0;
+  const losses = [];
+  const interval = setInterval(() => {
+    epoch++;
+    const loss = Math.exp(-epoch / 5) + Math.random() * 0.1;
+    losses.push(loss);
+    c.clearRect(0, 0, chart.width, chart.height);
+    c.strokeStyle = '#58a6ff';
+    c.lineWidth = 2;
+    c.beginPath();
+    losses.forEach((l, i) => {
+      const x = (i / 50) * chart.width;
+      const y = chart.height - (l / 1.2) * chart.height;
+      i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+    });
+    c.stroke();
+    c.fillStyle = '#8b949e';
+    c.font = '10px sans-serif';
+    c.fillText(`Epoch ${epoch}  Loss: ${loss.toFixed(4)}`, 8, 14);
+    if (epoch >= 50) clearInterval(interval);
+  }, 200);
+}
+
+function exportJSON() {
+  const data = { nodes: nodes.map(n => ({ ...n })), edges };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'network.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importJSON() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        nodes = data.nodes || [];
+        edges = data.edges || [];
+        nextId = nodes.length > 0 ? Math.max(...nodes.map(n => n.id)) + 1 : 1;
+        updateStats();
+        draw();
+      } catch (err) {
+        alert('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+resizeCanvas();
+</script>
+</body>
+</html>
