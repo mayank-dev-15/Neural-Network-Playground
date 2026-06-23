@@ -13,8 +13,8 @@ try:
 except ImportError:
     HAS_MPL = False
 
-from ..core.graph import ComputationGraph
-from ..core.engine import TrainingEngine
+from ..core.graph import ComputationGraph, LayerNode, LayerConfig
+from ..core.engine import TrainingEngine, TrainingConfig
 from ..core.visualizer import NetworkVisualizer
 
 
@@ -32,19 +32,23 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == '/api/graph/visualize':
             graph_json = params.get('graph', ['{}'])[0]
             try:
-                graph_data = json.loads(graph_json)
-                graph = ComputationGraph.from_dict(graph_data)
-                viz = NetworkVisualizer(graph)
-                fig_data = viz.to_json()
-                self._json({'visualization': fig_data})
+                graph = ComputationGraph.from_json(graph_json)
+                nodes_data = [n.to_dict() for n in graph.nodes.values()]
+                viz = NetworkVisualizer()
+                layout = viz.compute_layout(nodes_data)
+                self._json({'visualization': layout})
             except Exception as e:
                 self._json({'error': str(e)})
         elif path == '/api/graph/layers':
             graph_json = params.get('graph', ['{}'])[0]
             try:
-                graph_data = json.loads(graph_json)
-                graph = ComputationGraph.from_dict(graph_data)
-                self._json({'layers': [n.to_dict() for n in graph.nodes], 'edges': graph.edges})
+                graph = ComputationGraph.from_json(graph_json)
+                nodes_data = [n.to_dict() for n in graph.nodes.values()]
+                edges = []
+                for nid, node in graph.nodes.items():
+                    for out_id in node.outputs:
+                        edges.append({'from': nid, 'to': out_id})
+                self._json({'layers': nodes_data, 'edges': edges})
             except Exception as e:
                 self._json({'error': str(e)})
         elif path == '/':
@@ -69,11 +73,16 @@ class APIHandler(BaseHTTPRequestHandler):
                 nodes = data.get('nodes', [])
                 edges = data.get('edges', [])
                 for n in nodes:
-                    graph.add_node(n['id'], n.get('type', 'linear'), n.get('params', {}))
+                    config = LayerConfig(
+                        layer_type=n.get('type', 'linear'),
+                        params=n.get('params', {}),
+                    )
+                    node = LayerNode(config, n['id'])
+                    graph.add_node(node)
                 for e in edges:
-                    graph.add_edge(e['from'], e['to'])
-                graph.topological_sort()
-                self._json({'graph': graph.to_dict(), 'param_count': graph.param_count()})
+                    graph.connect(e['from'], e['to'])
+                order = graph.topological_sort()
+                self._json({'nodes': [graph.nodes[nid].to_dict() for nid in order], 'param_count': graph.get_param_count()})
             except Exception as ex:
                 self._json({'error': str(ex)})
         elif parsed.path == '/api/train':
@@ -82,9 +91,11 @@ class APIHandler(BaseHTTPRequestHandler):
                 arch_name = data.get('architecture', 'mlp')
                 arch_params = data.get('params', {})
                 model = ArchitectureRegistry.build(arch_name, **arch_params)
-                engine = TrainingEngine(model, **data.get('engine', {}))
-                result = engine.run()
-                self._json(result)
+                engine_cfg = data.get('engine', {})
+                config = TrainingConfig(**engine_cfg)
+                engine = TrainingEngine(config)
+                result = engine.train(model, data.get('train_loader', []), data.get('val_loader', []))
+                self._json({'metrics': [vars(m) for m in result]})
             except Exception as ex:
                 self._json({'error': str(ex)})
         else:

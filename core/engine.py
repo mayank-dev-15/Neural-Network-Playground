@@ -4,7 +4,7 @@ Training engine for neural network models.
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 import time
 import logging
